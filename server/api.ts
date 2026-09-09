@@ -156,7 +156,11 @@ import path from 'path';
 const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/7xmovies/Pirate69-v2/main';
 const USE_LOCAL_FILES = true; // Set to true for local testing, false for GitHub
 
-const getCategoryName = (source: string) => source === 'rogmovies' ? 'bollywood' : 'hollywood';
+const getCategoryName = (source: string) => {
+    if (source === 'rogmovies') return 'bollywood';
+    if (source === 'xprimehub') return 'xprimehub';
+    return 'hollywood';
+};
 
 router.get('/json/search', async (req, res) => {
     try {
@@ -474,12 +478,20 @@ router.get('/resolve-link', async (req, res) => {
     const $ = cheerio.load(response.data);
     let resolvedUrl = url; // Default to original if we can't find a better one
     
-    // Find all valid target links (Only V-Cloud)
+    // Find all valid target links (V-Cloud, G-Direct, V-Drive, Filepress)
     const validLinks: { name: string, url: string }[] = [];
     $('a').each((i, el) => {
       const href = $(el).attr('href');
       const text = $(el).text().trim().toLowerCase();
-      if (href && (href.includes('vcloud') || text.includes('v-cloud')) && !href.includes('nexdrive')) {
+      
+      const isTarget = href && !href.includes('nexdrive') && (
+        href.includes('vcloud') || text.includes('v-cloud') ||
+        href.includes('fastdl') || text.includes('g-direct') ||
+        href.includes('vegadrive') || text.includes('v-drive') ||
+        href.includes('filebee') || text.includes('filepress')
+      );
+
+      if (isTarget) {
         
         let epName = $(el).text().trim() || 'Link';
         let prev = $(el).parent().prev();
@@ -491,6 +503,10 @@ router.get('/resolve-link', async (req, res) => {
             }
             prev = prev.prev();
         }
+        
+        // Clean up the name for single movie mirrors
+        epName = epName.replace(/⚡/g, '').trim();
+        
         validLinks.push({ name: epName, url: href });
       }
     });
@@ -506,6 +522,97 @@ router.get('/resolve-link', async (req, res) => {
   } catch (error: any) {
     console.error('Link resolver error:', error.message);
     res.status(500).json({ error: 'Failed to resolve link.', originalUrl: req.query.url });
+  }
+});
+
+import { spawn } from 'child_process';
+
+interface ScrapeJob {
+  id: string;
+  source: string;
+  status: 'idle' | 'running' | 'completed' | 'error';
+  progress: number;
+  logs: string[];
+}
+
+const scrapeJobs = new Map<string, ScrapeJob>();
+
+router.post('/scrape/start', (req, res) => {
+  const { source, startPage, endPage } = req.body;
+  const jobId = Date.now().toString();
+  
+  const job: ScrapeJob = {
+    id: jobId,
+    source: source || 'vegamovies',
+    status: 'running',
+    progress: 0,
+    logs: ['[INFO] Scrape job initialized...']
+  };
+  
+  scrapeJobs.set(jobId, job);
+  
+  try {
+    // Determine which script to run based on source if needed
+    // Currently using the unified bulk-scraper.js
+    const scriptPath = path.join(process.cwd(), 'scripts', 'bulk-scraper.js');
+    
+    // Pass args: <source> <startPage> <endPage>
+    const child = spawn('node', [scriptPath, job.source, (startPage || 1).toString(), (endPage || 5).toString()]);
+    
+    child.stdout.on('data', (data) => {
+      const output = data.toString().trim();
+      if (output) {
+         const logLines = output.split('\n');
+         logLines.forEach((line: string) => {
+            job.logs.push(line);
+            // Very naive progress estimation if script outputs page progress
+            if (line.includes('Fetching page')) {
+                const match = line.match(/page (\d+)/);
+                if (match) {
+                    const current = parseInt(match[1]);
+                    const totalPages = (endPage || 5) - (startPage || 1) + 1;
+                    const donePages = current - (startPage || 1) + 1;
+                    job.progress = Math.min(Math.round((donePages / totalPages) * 100), 99);
+                }
+            }
+         });
+         // Keep last 100 logs
+         if (job.logs.length > 100) {
+            job.logs = job.logs.slice(job.logs.length - 100);
+         }
+      }
+    });
+    
+    child.stderr.on('data', (data) => {
+      const output = data.toString().trim();
+      if (output) {
+          const logLines = output.split('\n');
+          logLines.forEach((line: string) => {
+             job.logs.push(`[ERROR] ${line}`);
+          });
+      }
+    });
+    
+    child.on('close', (code) => {
+      job.status = code === 0 ? 'completed' : 'error';
+      job.progress = 100;
+      job.logs.push(code === 0 ? '[SUCCESS] Job finished successfully.' : `[ERROR] Job exited with code ${code}`);
+    });
+    
+    res.json({ jobId, message: 'Scrape job started successfully' });
+  } catch (error: any) {
+    job.status = 'error';
+    job.logs.push(`[ERROR] Failed to start process: ${error.message}`);
+    res.status(500).json({ error: 'Failed to start job' });
+  }
+});
+
+router.get('/scrape/status/:id', (req, res) => {
+  const job = scrapeJobs.get(req.params.id);
+  if (job) {
+    res.json(job);
+  } else {
+    res.status(404).json({ error: 'Job not found' });
   }
 });
 

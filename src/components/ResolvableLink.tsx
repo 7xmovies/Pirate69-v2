@@ -115,7 +115,7 @@ export function ResolvableLink({ name, url }: { name: string, url: string, key?:
              {name}
            </span>
            <span className={`text-sm ${theme.text} font-medium shrink-0 bg-slate-50 dark:bg-slate-950 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-800`}>
-             {resolvedList.length} Episodes Extracted
+             {resolvedList.length} {isSeason ? 'Episodes' : 'Mirrors'} Available
            </span>
          </div>
          
