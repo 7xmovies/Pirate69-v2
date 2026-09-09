@@ -24,7 +24,7 @@ let lastResolveTime = 0;
 
 async function fetchActualDomain(site: string) {
     try {
-        const res1 = await axios.get(`https://vglist.top/?re=${site}`, { maxRedirects: 0, validateStatus: () => true });
+        const res1 = await axios.get(`https://vglist.top/?re=${site}`, { maxRedirects: 0, validateStatus: () => true, timeout: 2000 });
         let url = res1.headers.location;
         
         if (!url) {
@@ -35,7 +35,7 @@ async function fetchActualDomain(site: string) {
         if (!url) return null;
         
         if (url.includes('vglist')) {
-            const res2 = await axios.get(url, { validateStatus: () => true });
+            const res2 = await axios.get(url, { validateStatus: () => true, timeout: 2000 });
             const match = res2.data.match(/url=(https?:\/\/[^"]+)/i);
             if (match) {
                 url = match[1];
@@ -49,7 +49,7 @@ async function fetchActualDomain(site: string) {
         // Special case for vegamovies which might return a landing page (e.g. 1vegamovies.sbs)
         if (site === 'vegamovies' && !url.includes('new')) {
             const step2Url = `${url}/?re=vg&t=2`;
-            const step2Res = await axios.get(step2Url, { maxRedirects: 0, validateStatus: () => true });
+            const step2Res = await axios.get(step2Url, { maxRedirects: 0, validateStatus: () => true, timeout: 2000 });
             if (step2Res.headers.location) {
                 url = step2Res.headers.location;
                 if (url.endsWith('/')) url = url.slice(0, -1);
