@@ -539,7 +539,7 @@ interface ScrapeJob {
 const scrapeJobs = new Map<string, ScrapeJob>();
 
 router.post('/scrape/start', (req, res) => {
-  const { source, startPage, endPage } = req.body;
+  const { source, startPage, endPage, concurrency } = req.body;
   const jobId = Date.now().toString();
   
   const job: ScrapeJob = {
@@ -557,10 +557,11 @@ router.post('/scrape/start', (req, res) => {
     // Currently using the unified bulk-scraper.js
     const scriptPath = path.join(process.cwd(), 'scripts', 'bulk-scraper.js');
     
-    // Pass args: <source> <startPage> <endPage>
+    // Pass args: <source> <startPage> <endPage> <concurrency>
     const args = [scriptPath, job.source];
     if (startPage) args.push(startPage.toString());
     if (endPage) args.push(endPage.toString());
+    if (concurrency) args.push(concurrency.toString());
 
     const child = spawn('node', args);
     job.process = child;

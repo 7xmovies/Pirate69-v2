@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Terminal, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Play, Square, Terminal, RefreshCw, CheckCircle2, XCircle, Zap } from 'lucide-react';
 
 interface ScrapeJob {
   id: string;
   source: string;
-  status: 'idle' | 'running' | 'completed' | 'error';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
   progress: number;
   logs: string[];
 }
@@ -13,6 +13,7 @@ export function BatchScraperDashboard() {
   const [source, setSource] = useState('vegamovies');
   const [startPage, setStartPage] = useState(1);
   const [endPage, setEndPage] = useState(5);
+  const [concurrency, setConcurrency] = useState(5);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobState, setJobState] = useState<ScrapeJob | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -65,6 +66,7 @@ export function BatchScraperDashboard() {
           source,
           startPage,
           endPage,
+          concurrency,
         }),
       });
 
@@ -169,6 +171,28 @@ export function BatchScraperDashboard() {
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
                 />
               </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  Speed & Concurrency
+                </label>
+                <span className="text-xs text-indigo-500 font-semibold">{concurrency}x Parallel</span>
+              </div>
+              <select 
+                value={concurrency}
+                onChange={(e) => setConcurrency(parseInt(e.target.value) || 5)}
+                disabled={activeJobId !== null}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+              >
+                <option value={1}>1x Normal (1-by-1)</option>
+                <option value={3}>3x Fast (3 concurrent)</option>
+                <option value={5}>5x Turbo (5 concurrent - Recommended)</option>
+                <option value={8}>8x Ultra (8 concurrent)</option>
+              </select>
+              <p className="text-[11px] text-slate-500 mt-1">Scrapes up to {concurrency} movies in parallel instead of 1-by-1.</p>
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">

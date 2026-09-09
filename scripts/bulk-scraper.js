@@ -83,6 +83,7 @@ let END_PAGE = parseInt(args[2]);
 if (isNaN(END_PAGE)) {
     END_PAGE = START_PAGE + 4; // Default to scraping 5 pages
 }
+let CONCURRENCY = parseInt(args[3]) || 5;
 
 // How many movies should be in a single chunk file?
 const MOVIES_PER_CHUNK = 100;
@@ -164,18 +165,18 @@ function saveMovieToChunk(chunkId, id, detailData) {
  * Scrape a specific movie page to get download links
  */
 async function scrapeMoviePage(url) {
-    console.log(`    -> Scraping details from: ${url}`);
-    
-    // NOTE: If Cloudflare blocks this, you must use Puppeteer or FlareSolverr here!
     const response = await axios.get(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        },
+        timeout: 15000
     });
     
     const $ = cheerio.load(response.data);
     const downloadLinks = [];
 
-    // --- YOUR CUSTOM SELECTOR LOGIC GOES HERE ---
-    // Example: Find all buttons that say "V-Cloud"
+    // Custom selector logic for links
     $('a[href*="vcloud"], a[href*="nexdrive"], a.elementor-button, a.xp-download-btn, a:has(button)').each((i, el) => {
         const linkText = $(el).text().trim() || $(el).find('button').text().trim();
         const linkUrl = $(el).attr('href');
@@ -198,7 +199,7 @@ async function scrapeMoviePage(url) {
  * Main Crawler Loop
  */
 async function runScraper() {
-    console.log(`🚀 Starting Bulk Scraper for ${CATEGORY}`);
+    console.log(`🚀 Starting Turbo Bulk Scraper for ${CATEGORY} (Concurrency: ${CONCURRENCY} workers)`);
     
     let indexData = readIndex();
     const existingIds = new Set(indexData.map(m => m.id));
@@ -208,13 +209,16 @@ async function runScraper() {
         console.log(`\n📄 Scraping Page ${page}: ${pageUrl}`);
 
         try {
-            // NOTE: If Cloudflare blocks this, you must use Puppeteer or FlareSolverr here!
             const response = await axios.get(pageUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                },
+                timeout: 20000
             });
             
             const $ = cheerio.load(response.data);
-            const movieArticles = $('article, .post-item, .poster-card'); // Adjust selector based on site
+            const movieArticles = $('article, .post-item, .poster-card');
 
             const moviesOnPage = [];
 
@@ -235,71 +239,91 @@ async function runScraper() {
                 }
             });
 
-            console.log(`Found ${moviesOnPage.length} movies on page ${page}.`);
+            console.log(`Found ${moviesOnPage.length} items on page ${page}.`);
 
-            for (const movie of moviesOnPage) {
+            // Filter out existing movies upfront
+            const newMovies = moviesOnPage.filter(movie => {
                 const id = generateIdFromUrl(movie.link);
-
                 if (existingIds.has(id)) {
-                    console.log(`  [SKIP] ${movie.title} is already in the index.`);
-                    continue; // Skip if already scraped
+                    console.log(`  [SKIP] Already indexed: ${movie.title}`);
+                    return false;
                 }
+                return true;
+            });
 
-                console.log(`  [NEW] Found ${movie.title}`);
-                
-                try {
-                    // Random delay between 1 and 3 seconds to avoid getting banned
-                    await delay(Math.floor(Math.random() * 2000) + 1000);
-                    
-                    // Scrape the inner page
-                    const details = await scrapeMoviePage(movie.link);
-                    
-                    // Determine which chunk file this goes into
-                    const targetChunk = getTargetChunkFile(indexData);
+            if (newMovies.length === 0) {
+                console.log(`  ℹ️ All movies on page ${page} are already indexed.`);
+            } else {
+                console.log(`⚡ Scraping ${newMovies.length} new movies concurrently (${CONCURRENCY} workers)...`);
 
-                    // 1. Add to Index
-                    const indexEntry = {
-                        id,
-                        title: movie.title,
-                        poster: movie.poster,
-                        chunk: targetChunk
-                    };
-                    
-                    // 2. Save Detail to Chunk
-                    saveMovieToChunk(targetChunk, id, {
-                        id,
-                        fullTitle: details.fullTitle,
-                        cleanTitle: movie.title,
-                        poster: movie.poster,
-                        sourceUrl: movie.link,
-                        downloadLinks: details.downloadLinks
-                    });
+                let currentIndex = 0;
+                const workerCount = Math.min(CONCURRENCY, newMovies.length);
 
-                    // 3. Update Index File
-                    indexData.push(indexEntry);
-                    saveIndex(indexData);
-                    existingIds.add(id);
+                const workers = Array.from({ length: workerCount }, async (_, workerId) => {
+                    // Stagger worker start by 250ms to prevent instant burst
+                    await delay(workerId * 250);
 
-                    console.log(`  [SUCCESS] Saved ${id} into chunk-${targetChunk}.json`);
-                } catch (err) {
-                    console.error(`  [ERROR] Failed to scrape details for ${movie.title}: ${err.message}`);
-                }
+                    while (currentIndex < newMovies.length) {
+                        const idx = currentIndex++;
+                        const movie = newMovies[idx];
+                        const id = generateIdFromUrl(movie.link);
+
+                        try {
+                            console.log(`  [RUN] [${idx + 1}/${newMovies.length}] Scraping: ${movie.title}`);
+                            
+                            // Scrape movie details
+                            const details = await scrapeMoviePage(movie.link);
+                            
+                            // Synchronous critical section for atomic chunk/index write
+                            const targetChunk = getTargetChunkFile(indexData);
+
+                            const indexEntry = {
+                                id,
+                                title: movie.title,
+                                poster: movie.poster,
+                                chunk: targetChunk
+                            };
+                            
+                            saveMovieToChunk(targetChunk, id, {
+                                id,
+                                fullTitle: details.fullTitle,
+                                cleanTitle: movie.title,
+                                poster: movie.poster,
+                                sourceUrl: movie.link,
+                                downloadLinks: details.downloadLinks
+                            });
+
+                            indexData.push(indexEntry);
+                            saveIndex(indexData);
+                            existingIds.add(id);
+
+                            console.log(`  [DONE] [${idx + 1}/${newMovies.length}] Saved -> chunk-${targetChunk}.json (${details.downloadLinks.length} links)`);
+                            
+                            // Brief polite pause before next item in worker
+                            await delay(400 + Math.floor(Math.random() * 300));
+                        } catch (err) {
+                            console.error(`  [ERROR] [${idx + 1}/${newMovies.length}] Failed ${movie.title}: ${err.message}`);
+                        }
+                    }
+                });
+
+                await Promise.all(workers);
             }
             
-            // Delay before next page
-            await delay(3000);
+            // Brief pause before next page
+            await delay(1000);
             
-            // Successfully scraped the page, update history
+            // Update history
             updateHistory(CATEGORY, page);
             
         } catch (error) {
             console.error(`❌ Error scraping page ${page}:`, error.message);
             console.log("If this says 403 Forbidden, Cloudflare blocked you! You must use FlareSolverr or Puppeteer Stealth.");
-            break; // Stop if Cloudflare blocks us
+            break;
         }
     }
     
-    console.log(`\n✅ Scraping Complete!`);
+    console.log(`\n✅ Scraping Complete! Total indexed: ${indexData.length}`);
 }
 
 runScraper();
