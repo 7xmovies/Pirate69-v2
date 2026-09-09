@@ -12,22 +12,34 @@ async function axiosGetWithFallback(url: string, options: any = {}) {
     } catch (err: any) {
         console.error(`Direct request failed (${err?.response?.status || err?.code}): ${url}`);
         
-        // Fallback to ScraperAPI
-        const apiKey = process.env.SCRAPER_API_KEY || '6aa8d89b2fe4704e0deff17075e98665';
-        if (apiKey) {
-            console.log('Attempting to bypass with ScraperAPI...');
+        // Fallback to FlareSolverr
+        const flareUrl = process.env.FLARESOLVERR_URL;
+        if (flareUrl && options.responseType !== 'arraybuffer') {
+            console.log('Attempting to bypass with FlareSolverr...');
             try {
-                const scraperUrl = `http://api.scraperapi.com/?api_key=${apiKey}&url=${encodeURIComponent(url)}`;
-                // We strip custom headers to let ScraperAPI handle the disguise
-                const scraperOptions = { ...options, timeout: 8000 };
-                if (scraperOptions.headers) {
-                    delete scraperOptions.headers;
+                const payload = {
+                    cmd: 'request.get',
+                    url: url,
+                    maxTimeout: 60000
+                };
+                const flareRes = await axios.post(flareUrl, payload, {
+                    headers: { 'Content-Type': 'application/json' },
+                    timeout: 65000
+                });
+                
+                if (flareRes.data.status === 'ok' && flareRes.data.solution) {
+                    // Mimic standard axios response structure
+                    return {
+                        data: flareRes.data.solution.response,
+                        status: flareRes.data.solution.status,
+                        headers: flareRes.data.solution.headers || {}
+                    };
+                } else {
+                    throw new Error('FlareSolverr did not return an OK status');
                 }
-                const res = await axios.get(scraperUrl, scraperOptions);
-                return res;
-            } catch (scraperErr: any) {
-                console.error(`ScraperAPI failed (${scraperErr?.response?.status || scraperErr?.code})`);
-                throw scraperErr;
+            } catch (flareErr: any) {
+                console.error(`FlareSolverr failed:`, flareErr?.message);
+                throw flareErr;
             }
         }
         
