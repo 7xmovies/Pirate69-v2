@@ -19,10 +19,22 @@ import crypto from 'crypto';
  * ============================================================================
  */
 
-const BASE_URL = 'https://new2.vegamovies.futbol';
-const CATEGORY = 'hollywood'; // Change to 'bollywood' for rogmovies
-const START_PAGE = 1;
-const END_PAGE = 5; // How many pages deep to scrape
+const args = process.argv.slice(2);
+const sourceArg = args[0] || 'vegamovies';
+
+let CATEGORY = 'hollywood';
+let BASE_URL = 'https://new2.vegamovies.futbol';
+
+if (sourceArg === 'rogmovies') {
+    CATEGORY = 'bollywood';
+    BASE_URL = 'https://rogmovies.cfd';
+} else if (sourceArg === 'xprimehub') {
+    CATEGORY = 'xprimehub';
+    BASE_URL = 'https://xprimehub.pics';
+}
+
+const START_PAGE = parseInt(args[1]) || 1;
+const END_PAGE = parseInt(args[2]) || 5;
 
 // How many movies should be in a single chunk file?
 const MOVIES_PER_CHUNK = 100;
@@ -117,7 +129,7 @@ async function scrapeMoviePage(url) {
 
     // --- YOUR CUSTOM SELECTOR LOGIC GOES HERE ---
     // Example: Find all buttons that say "V-Cloud"
-    $('a[href*="vcloud"], a.elementor-button').each((i, el) => {
+    $('a[href*="vcloud"], a.elementor-button, a.xp-download-btn').each((i, el) => {
         const linkText = $(el).text().trim();
         const linkUrl = $(el).attr('href');
         
