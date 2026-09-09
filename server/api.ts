@@ -28,7 +28,7 @@ refreshProxies();
 async function axiosGetWithFallback(url, options = {}) {
     // 1. Try Direct Connection First (Fastest & most reliable)
     try {
-        const res = await axios.get(url, { ...options, timeout: 8000 });
+        const res = await axios.get(url, { ...options, timeout: 15000 });
         return res;
     } catch (err) {
         const isCloudflareBlock = err.response && [403, 503, 522, 500].includes(err.response.status);
@@ -52,7 +52,7 @@ async function axiosGetWithFallback(url, options = {}) {
         const agent = new HttpsProxyAgent(`http://${proxy}`);
         try {
             console.log(`Trying proxy ${proxy} for ${url}`);
-            const res = await axios.get(url, { ...options, httpsAgent: agent, timeout: 5000 });
+            const res = await axios.get(url, { ...options, httpsAgent: agent, timeout: 10000 });
             console.log(`Proxy ${proxy} succeeded!`);
             return res;
         } catch (err) {
