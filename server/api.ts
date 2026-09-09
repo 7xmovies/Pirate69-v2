@@ -154,13 +154,55 @@ import path from 'path';
 
 // In production, these should point to the raw GitHub URLs
 const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/7xmovies/database/main';
-const USE_LOCAL_FILES = process.env.NODE_ENV !== 'production';
+const USE_LOCAL_FILES = true; // Support local files whenever available in data/ directory
 
 const getCategoryName = (source: string) => {
-    if (source === 'rogmovies') return 'bollywood';
+    if (source === 'rogmovies' || source === 'bollywood') return 'bollywood';
     if (source === 'xprimehub') return 'xprimehub';
     return 'hollywood';
 };
+
+function getLocalOrRemoteIndex(categoryName: string): any[] {
+    try {
+        const indexFile = path.join(process.cwd(), 'data', `${categoryName}-index.json`);
+        if (fs.existsSync(indexFile)) {
+            return JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+        }
+    } catch (e) {
+        console.error(`Failed to read local index for ${categoryName}`, e);
+    }
+    return [];
+}
+
+function findMovieInLocalChunks(targetUrlOrId: string): any | null {
+    try {
+        const cleanTarget = targetUrlOrId.replace(/\/+$/, '');
+        const slug = cleanTarget.split('/').pop() || cleanTarget;
+
+        const categories = ['hollywood', 'bollywood', 'xprimehub'];
+        for (const cat of categories) {
+            const index = getLocalOrRemoteIndex(cat);
+            const entry = index.find((m: any) => 
+                m.id === slug || 
+                (m.sourceUrl && m.sourceUrl.replace(/\/+$/, '') === cleanTarget) ||
+                (m.link && m.link.replace(/\/+$/, '') === cleanTarget) ||
+                cleanTarget.includes(m.id)
+            );
+
+            if (entry && entry.chunk) {
+                const chunkFile = path.join(process.cwd(), 'data', cat, `chunk-${entry.chunk}.json`);
+                if (fs.existsSync(chunkFile)) {
+                    const chunkData = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+                    const movie = chunkData[entry.id] || Object.values(chunkData).find((v: any) => v.id === entry.id || (v.sourceUrl && v.sourceUrl.includes(entry.id)));
+                    if (movie) return movie;
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Error finding movie in local chunks:', err);
+    }
+    return null;
+}
 
 router.get('/json/search', async (req, res) => {
     try {
@@ -169,21 +211,19 @@ router.get('/json/search', async (req, res) => {
         const categoryName = getCategoryName(source);
         let indexData: any[] = [];
 
-        if (USE_LOCAL_FILES) {
-            const indexFile = path.join(process.cwd(), 'data', `${categoryName}-index.json`);
-            if (fs.existsSync(indexFile)) {
-                indexData = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
-            }
+        const localData = getLocalOrRemoteIndex(categoryName);
+        if (localData && localData.length > 0) {
+            indexData = localData;
         } else {
-            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}-index.json`);
+            const response = await axios.get(`${GITHUB_REPO_URL}/${categoryName}-index.json`);
             indexData = response.data;
         }
 
         // Filter the results
         const results = indexData.filter(movie => {
             if (query === '' || query === '*') return true;
-            return movie.title.toLowerCase().includes(query) || 
-                   movie.id.toLowerCase().includes(query);
+            return (movie.title && movie.title.toLowerCase().includes(query)) || 
+                   (movie.id && movie.id.toLowerCase().includes(query));
         });
 
         res.json({ results, total: results.length });
@@ -201,14 +241,9 @@ router.get('/json/movie/:id', async (req, res) => {
         let movieData = null;
 
         // 1. First, we must find which chunk this movie belongs to by reading the index
-        let indexData: any[] = [];
-        if (USE_LOCAL_FILES) {
-            const indexFile = path.join(process.cwd(), 'data', `${categoryName}-index.json`);
-            if (fs.existsSync(indexFile)) {
-                indexData = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
-            }
-        } else {
-            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}-index.json`);
+        let indexData: any[] = getLocalOrRemoteIndex(categoryName);
+        if (!indexData || indexData.length === 0) {
+            const response = await axios.get(`${GITHUB_REPO_URL}/${categoryName}-index.json`);
             indexData = response.data;
         }
 
@@ -221,14 +256,12 @@ router.get('/json/movie/:id', async (req, res) => {
         const chunkId = movieIndexEntry.chunk || 1; // Default to 1 if not set
 
         // 2. Now fetch the specific chunk file
-        if (USE_LOCAL_FILES) {
-            const chunkFile = path.join(process.cwd(), 'data', categoryName, `chunk-${chunkId}.json`);
-            if (fs.existsSync(chunkFile)) {
-                const chunkData = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
-                movieData = chunkData[id]; // Extract just this movie from the chunk dictionary
-            }
+        const chunkFile = path.join(process.cwd(), 'data', categoryName, `chunk-${chunkId}.json`);
+        if (fs.existsSync(chunkFile)) {
+            const chunkData = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+            movieData = chunkData[id];
         } else {
-            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}/chunk-${chunkId}.json`);
+            const response = await axios.get(`${GITHUB_REPO_URL}/${categoryName}/chunk-${chunkId}.json`);
             const chunkData = response.data;
             movieData = chunkData[id];
         }
@@ -248,12 +281,38 @@ router.get('/json/movie/:id', async (req, res) => {
 
 // API route for searching VegaMovies
 router.get('/search', async (req, res) => {
-  try {
-    const query = req.query.q as string || '*'; // '*' acts as fetch latest/all
-    const category = req.query.category as string || '';
-    const source = req.query.source as string || 'vegamovies';
-    const page = parseInt(req.query.page as string) || 1;
+  const query = req.query.q as string || '*'; // '*' acts as fetch latest/all
+  const category = req.query.category as string || '';
+  const source = req.query.source as string || 'vegamovies';
+  const page = parseInt(req.query.page as string) || 1;
+  const categoryName = getCategoryName(source);
 
+  // 1. Gather any matching results from our database index
+  let localResults: any[] = [];
+  try {
+    const indexData = getLocalOrRemoteIndex(categoryName);
+    if (indexData && indexData.length > 0) {
+      const qClean = query.toLowerCase().trim();
+      const filtered = indexData.filter((m: any) => {
+        if (qClean === '' || qClean === '*') return false; // for '*' we prioritize live fresh feed
+        const t = (m.title || '').toLowerCase();
+        const id = (m.id || '').toLowerCase();
+        return t.includes(qClean) || id.includes(qClean);
+      });
+
+      localResults = filtered.slice(0, 40).map((m: any) => ({
+        id: m.id,
+        title: m.title || m.cleanTitle || m.id,
+        thumbnail: m.poster || m.thumbnail || '',
+        link: m.sourceUrl || m.link || `https://new2.vegamovies.futbol/${m.id}/`,
+      }));
+    }
+  } catch (idxErr) {
+    console.warn('Index lookup warning in search:', idxErr);
+  }
+
+  // 2. Attempt live search from target site
+  try {
     let baseUrl = await getVegaDomain();
     if (source === 'rogmovies') {
         baseUrl = await getRogDomain();
@@ -285,7 +344,7 @@ router.get('/search', async (req, res) => {
       }
     });
     
-    const results: any[] = [];
+    const liveResults: any[] = [];
     const data = response.data;
     let totalPages = 1;
     
@@ -293,7 +352,7 @@ router.get('/search', async (req, res) => {
       data.hits.forEach((hit: any, i: number) => {
         const doc = hit.document;
         if (doc) {
-          results.push({
+          liveResults.push({
             id: doc.id || i.toString(),
             title: doc.post_title,
             thumbnail: doc.post_thumbnail,
@@ -301,16 +360,49 @@ router.get('/search', async (req, res) => {
           });
         }
       });
-      // typesense returns 'found' as total hits. Assuming 20 or 24 per page. Let's say 24 per page.
       if (data.found) {
         totalPages = Math.ceil(data.found / 24);
       }
     }
 
-    res.json({ results, page, totalPages, hasMore: page < totalPages });
+    // Merge local results with live results, avoiding duplicates
+    const combinedMap = new Map<string, any>();
+    
+    // Add local database hits first
+    localResults.forEach(item => {
+      const key = (item.title || item.id).toLowerCase().replace(/[^a-z0-9]/g, '');
+      combinedMap.set(key, item);
+    });
+
+    // Add live hits
+    liveResults.forEach(item => {
+      const key = (item.title || item.id).toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!combinedMap.has(key)) {
+        combinedMap.set(key, item);
+      }
+    });
+
+    const finalResults = Array.from(combinedMap.values());
+    res.json({ 
+      results: finalResults, 
+      page, 
+      totalPages: Math.max(totalPages, 1), 
+      hasMore: page < totalPages 
+    });
   } catch (error: any) {
-    console.error('Scraping error:', error.message);
-    res.status(500).json({ error: 'Failed to extract information. The site might be protected or unreachable.' });
+    console.error('Live search failed, returning database results if any:', error.message);
+    // If live search fails, don't crash with 500 error! Return local database results!
+    if (localResults.length > 0) {
+      return res.json({ 
+        results: localResults, 
+        page: 1, 
+        totalPages: 1, 
+        hasMore: false 
+      });
+    }
+
+    // Return empty array rather than a broken 500 error page
+    res.json({ results: [], page: 1, totalPages: 1, hasMore: false });
   }
 });
 
@@ -320,6 +412,23 @@ router.get('/details', async (req, res) => {
     const url = req.query.url as string;
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
+    }
+
+    // 1. Check if movie already exists in our local chunks!
+    const cachedMovie = findMovieInLocalChunks(url);
+    if (cachedMovie && cachedMovie.downloadLinks && cachedMovie.downloadLinks.length > 0) {
+      console.log(`[INSTANT] Serving details from database chunk for: ${cachedMovie.id}`);
+      return res.json({
+        details: {
+          title: cachedMovie.fullTitle || cachedMovie.cleanTitle || cachedMovie.id,
+          thumbnail: cachedMovie.poster || '',
+          screenshots: cachedMovie.screenshots || [],
+          downloadLinks: (cachedMovie.downloadLinks || []).map((dl: any) => ({
+            label: dl.label || dl.name || 'Download Now',
+            url: dl.url
+          }))
+        }
+      });
     }
 
     console.log(`Fetching details from: ${url}`);

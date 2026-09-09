@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Film, X, ChevronDown, List, Bookmark, History, Database } from 'lucide-react';
+import { Home, Film, X, ChevronDown, List, Bookmark, History, Database, BookOpen } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -14,6 +14,7 @@ interface SidebarProps {
   isHistoryView: boolean;
   onScraperClick?: () => void;
   isScraperView?: boolean;
+  onGuideClick?: () => void;
   activeSource?: 'vegamovies' | 'rogmovies' | 'xprimehub';
   onSelectSource?: (source: 'vegamovies' | 'rogmovies' | 'xprimehub') => void;
 }
@@ -31,6 +32,7 @@ export function Sidebar({
   isHistoryView,
   onScraperClick,
   isScraperView,
+  onGuideClick,
   activeSource,
   onSelectSource
 }: SidebarProps) {
@@ -112,13 +114,23 @@ export function Sidebar({
           </button>
 
           <div className="mt-6 border-t border-slate-200 dark:border-slate-800/50 pt-4">
-            <h3 className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Admin</h3>
+            <h3 className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Developer & Admin</h3>
+            <button
+              onClick={() => {
+                if (onGuideClick) onGuideClick();
+                onClose();
+              }}
+              className="flex items-center w-full gap-3 px-4 py-3 rounded-xl font-medium transition-colors text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-900 hover:text-indigo-600 dark:hover:text-indigo-400"
+            >
+              <BookOpen className="w-5 h-5 text-indigo-500" />
+              API & Fetch Guide
+            </button>
             <button
               onClick={() => {
                 if (onScraperClick) onScraperClick();
                 onClose();
               }}
-              className={`flex items-center w-full gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+              className={`flex items-center w-full gap-3 px-4 py-3 rounded-xl font-medium transition-colors mt-1 ${
                 isScraperView
                   ? 'bg-indigo-600/10 text-indigo-400' 
                   : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:bg-slate-900 hover:text-white'

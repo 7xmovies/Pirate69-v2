@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Loader2, Menu, History, Sun, Moon, Trash2, Bell } from 'lucide-react';
+import { Film, Loader2, Menu, History, Sun, Moon, Trash2, Bell, BookOpen } from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import { MediaItem, SearchResponse, PostDetails, DetailsResponse } from './types';
 import { SearchBar } from './components/SearchBar';
@@ -8,6 +8,7 @@ import { MediaGridSkeleton } from './components/MediaGridSkeleton';
 import { PostDetailsView } from './components/PostDetailsView';
 import { Sidebar } from './components/Sidebar';
 import { BatchScraperDashboard } from './components/BatchScraperDashboard';
+import { ApiGuideModal } from './components/ApiGuideModal';
 
 const CATEGORIES = [
   'Action', 'Adventure', 'Comedy', 'Drama', 'Sci-Fi', 'Horror', 'Thriller', 'Animation', 'Netflix'
@@ -73,6 +74,7 @@ export default function App() {
   const [isWatchlistView, setIsWatchlistView] = useState(false);
   const [isHistoryView, setIsHistoryView] = useState(false);
   const [isScraperView, setIsScraperView] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [activeSource, setActiveSource] = useState<'vegamovies' | 'rogmovies' | 'xprimehub'>('vegamovies');
   
   const [results, setResults] = useState<MediaItem[]>([]);
@@ -369,6 +371,16 @@ export default function App() {
               )}
             </div>
 
+            {/* API Guide Button */}
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/80 dark:border-indigo-800/80 rounded-xl hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors shadow-sm"
+              title="Learn how to fetch movies and download links"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">API Guide</span>
+            </button>
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -394,6 +406,7 @@ export default function App() {
         isHistoryView={isHistoryView}
         onScraperClick={handleScraperClick}
         isScraperView={isScraperView}
+        onGuideClick={() => setIsGuideOpen(true)}
         activeSource={activeSource}
         onSelectSource={handleSourceChange}
       />
@@ -575,6 +588,13 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* API & Fetch Guide Modal */}
+      <ApiGuideModal 
+        isOpen={isGuideOpen} 
+        onClose={() => setIsGuideOpen(false)} 
+        defaultSource={activeSource}
+      />
     </div>
   );
 }
