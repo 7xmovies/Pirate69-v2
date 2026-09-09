@@ -14,7 +14,7 @@ export interface SearchResponse {
 }
 
 export interface DownloadLink {
-  name: string;
+  label: string;
   url: string;
 }
 

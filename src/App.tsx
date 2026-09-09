@@ -7,6 +7,7 @@ import { MediaGrid } from './components/MediaGrid';
 import { MediaGridSkeleton } from './components/MediaGridSkeleton';
 import { PostDetailsView } from './components/PostDetailsView';
 import { Sidebar } from './components/Sidebar';
+import { BatchScraperDashboard } from './components/BatchScraperDashboard';
 
 const CATEGORIES = [
   'Action', 'Adventure', 'Comedy', 'Drama', 'Sci-Fi', 'Horror', 'Thriller', 'Animation', 'Netflix'
@@ -71,6 +72,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isWatchlistView, setIsWatchlistView] = useState(false);
   const [isHistoryView, setIsHistoryView] = useState(false);
+  const [isScraperView, setIsScraperView] = useState(false);
   const [activeSource, setActiveSource] = useState<'vegamovies' | 'rogmovies' | 'xprimehub'>('vegamovies');
   
   const [results, setResults] = useState<MediaItem[]>([]);
@@ -169,6 +171,7 @@ export default function App() {
     setActiveCategory('');
     setIsWatchlistView(false);
     setIsHistoryView(false);
+    setIsScraperView(false);
     handleBackToHome();
     fetchPosts({ q: query, category: '', pageNum: 1 });
   };
@@ -177,6 +180,7 @@ export default function App() {
     setActiveSource(newSource);
     setIsWatchlistView(false);
     setIsHistoryView(false);
+    setIsScraperView(false);
     setQuery('');
     setActiveCategory('');
     handleBackToHome();
@@ -188,6 +192,7 @@ export default function App() {
     setActiveCategory(newCat);
     setIsWatchlistView(false);
     setIsHistoryView(false);
+    setIsScraperView(false);
     setQuery('');
     handleBackToHome();
     fetchPosts({ q: '', category: newCat, pageNum: 1 });
@@ -200,6 +205,7 @@ export default function App() {
 
   const handlePostClick = async (url: string, isInitialLoad = false) => {
     setSelectedPost(url);
+    setIsScraperView(false);
     if (!isInitialLoad) {
        window.history.pushState({}, '', `?post=${encodeURIComponent(url)}`);
     }
@@ -242,6 +248,7 @@ export default function App() {
     handleBackToHome();
     setIsWatchlistView(false);
     setIsHistoryView(false);
+    setIsScraperView(false);
     setQuery('');
     setActiveCategory('');
     fetchPosts({ q: '', category: '', pageNum: 1 });
@@ -250,6 +257,7 @@ export default function App() {
   const handleWatchlistClick = () => {
     setIsWatchlistView(true);
     setIsHistoryView(false);
+    setIsScraperView(false);
     setQuery('');
     setActiveCategory('');
     setSelectedPost(null);
@@ -258,6 +266,17 @@ export default function App() {
 
   const handleHistoryClick = () => {
     setIsHistoryView(true);
+    setIsWatchlistView(false);
+    setIsScraperView(false);
+    setQuery('');
+    setActiveCategory('');
+    setSelectedPost(null);
+    window.history.pushState({}, '', window.location.pathname);
+  };
+
+  const handleScraperClick = () => {
+    setIsScraperView(true);
+    setIsHistoryView(false);
     setIsWatchlistView(false);
     setQuery('');
     setActiveCategory('');
@@ -373,6 +392,8 @@ export default function App() {
         isWatchlistView={isWatchlistView}
         onHistoryClick={handleHistoryClick}
         isHistoryView={isHistoryView}
+        onScraperClick={handleScraperClick}
+        isScraperView={isScraperView}
         activeSource={activeSource}
         onSelectSource={handleSourceChange}
       />
@@ -380,7 +401,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
         
         {/* Search & Categories - Hide when looking at details */}
-        {!selectedPost && !isWatchlistView && !isHistoryView && (
+        {!selectedPost && !isWatchlistView && !isHistoryView && !isScraperView && (
           <div className="mb-12">
             <div className="relative mb-8">
               {/* Cinematic Background Glow */}
@@ -487,6 +508,10 @@ export default function App() {
             isInWatchlist={watchlist.some(p => p.link === selectedPost)}
             onToggleWatchlist={handleToggleWatchlist}
           />
+        ) : isScraperView ? (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <BatchScraperDashboard />
+          </div>
         ) : isWatchlistView ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
              {watchlist.length > 0 ? (

@@ -143,7 +143,7 @@ export function PostDetailsView({ loading, error, details, selectedPostUrl, onBa
                  ) : (
                    <div className="grid gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
                       {details.downloadLinks.map((link, idx) => (
-                        <ResolvableLink key={idx} name={link.name} url={link.url} />
+                        <ResolvableLink key={idx} name={link.label || (link as any).name || "Download Link"} url={link.url} />
                       ))}
                    </div>
                  )}

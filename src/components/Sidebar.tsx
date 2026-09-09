@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Home, Film, X, ChevronDown, List, Bookmark, History } from 'lucide-react';
+import { Home, Film, X, ChevronDown, List, Bookmark, History, Database } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -12,6 +12,8 @@ interface SidebarProps {
   isWatchlistView: boolean;
   onHistoryClick: () => void;
   isHistoryView: boolean;
+  onScraperClick?: () => void;
+  isScraperView?: boolean;
   activeSource?: 'vegamovies' | 'rogmovies' | 'xprimehub';
   onSelectSource?: (source: 'vegamovies' | 'rogmovies' | 'xprimehub') => void;
 }
@@ -27,6 +29,8 @@ export function Sidebar({
   isWatchlistView, 
   onHistoryClick, 
   isHistoryView,
+  onScraperClick,
+  isScraperView,
   activeSource,
   onSelectSource
 }: SidebarProps) {
@@ -106,6 +110,24 @@ export function Sidebar({
             <History className="w-5 h-5" />
             Recently Viewed
           </button>
+
+          <div className="mt-6 border-t border-slate-200 dark:border-slate-800/50 pt-4">
+            <h3 className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Admin</h3>
+            <button
+              onClick={() => {
+                if (onScraperClick) onScraperClick();
+                onClose();
+              }}
+              className={`flex items-center w-full gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${
+                isScraperView
+                  ? 'bg-indigo-600/10 text-indigo-400' 
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:bg-slate-900 hover:text-white'
+              }`}
+            >
+              <Database className="w-5 h-5" />
+              Batch Scraper
+            </button>
+          </div>
 
           <div className="mt-6">
             <h3 className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sources</h3>
