@@ -22,6 +22,14 @@ import crypto from 'crypto';
 const args = process.argv.slice(2);
 const sourceArg = args[0] || 'vegamovies';
 
+// Listen for the "stop button" (Ctrl+C) in the terminal
+process.on('SIGINT', () => {
+    console.log('\n\n🛑 Stop signal received! Scraping paused.');
+    console.log('✅ Progress up to the last fully completed page has already been saved to history.');
+    console.log('You can resume anytime by running the script again.');
+    process.exit(0);
+});
+
 const DATA_DIR = path.join(process.cwd(), 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'scraper-history.json');
 
