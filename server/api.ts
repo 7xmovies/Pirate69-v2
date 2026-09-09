@@ -7,7 +7,7 @@ import * as cheerio from 'cheerio';
  */
 async function axiosGetWithFallback(url, options = {}) {
     try {
-        const res = await axios.get(url, { ...options, timeout: 15000 });
+        const res = await axios.get(url, { ...options, timeout: 7000 });
         return res;
     } catch (err) {
         console.error(`Request failed (${err?.response?.status || err?.code}): ${url}`);
