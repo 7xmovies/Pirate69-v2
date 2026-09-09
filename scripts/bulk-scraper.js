@@ -22,25 +22,64 @@ import crypto from 'crypto';
 const args = process.argv.slice(2);
 const sourceArg = args[0] || 'vegamovies';
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const HISTORY_FILE = path.join(DATA_DIR, 'scraper-history.json');
+
+function getHistory() {
+    if (fs.existsSync(HISTORY_FILE)) {
+        return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    }
+    return {};
+}
+
+function updateHistory(category, page) {
+    const history = getHistory();
+    // Only update if it's the highest page we've scraped
+    if (!history[category] || page > history[category]) {
+        history[category] = page;
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+    }
+}
+
+if (sourceArg === 'history') {
+    const history = getHistory();
+    console.log("📊 Scraper History (Last scraped pages):");
+    if (Object.keys(history).length === 0) {
+        console.log("No history found.");
+    } else {
+        Object.entries(history).forEach(([cat, page]) => {
+            console.log(` - ${cat}: Page ${page}`);
+        });
+    }
+    process.exit(0);
+}
+
 let CATEGORY = 'hollywood';
 let BASE_URL = 'https://new2.vegamovies.futbol';
 
 if (sourceArg === 'rogmovies') {
     CATEGORY = 'bollywood';
-    BASE_URL = 'https://rogmovies.cfd';
+    BASE_URL = 'https://new2.rogmovies.click';
 } else if (sourceArg === 'xprimehub') {
     CATEGORY = 'xprimehub';
     BASE_URL = 'https://xprimehub.pics';
 }
 
-const START_PAGE = parseInt(args[1]) || 1;
-const END_PAGE = parseInt(args[2]) || 5;
+let START_PAGE = parseInt(args[1]);
+if (isNaN(START_PAGE)) {
+    const history = getHistory();
+    START_PAGE = (history[CATEGORY] || 0) + 1;
+}
+let END_PAGE = parseInt(args[2]);
+if (isNaN(END_PAGE)) {
+    END_PAGE = START_PAGE + 4; // Default to scraping 5 pages
+}
 
 // How many movies should be in a single chunk file?
 const MOVIES_PER_CHUNK = 100;
 
 // Paths
-const DATA_DIR = path.join(process.cwd(), 'data');
 const INDEX_FILE = path.join(DATA_DIR, `${CATEGORY}-index.json`);
 const CHUNK_DIR = path.join(DATA_DIR, CATEGORY);
 
@@ -129,8 +168,8 @@ async function scrapeMoviePage(url) {
 
     // --- YOUR CUSTOM SELECTOR LOGIC GOES HERE ---
     // Example: Find all buttons that say "V-Cloud"
-    $('a[href*="vcloud"], a.elementor-button, a.xp-download-btn').each((i, el) => {
-        const linkText = $(el).text().trim();
+    $('a[href*="vcloud"], a[href*="nexdrive"], a.elementor-button, a.xp-download-btn, a:has(button)').each((i, el) => {
+        const linkText = $(el).text().trim() || $(el).find('button').text().trim();
         const linkUrl = $(el).attr('href');
         
         if (linkUrl && linkUrl.includes('http')) {
@@ -167,15 +206,21 @@ async function runScraper() {
             });
             
             const $ = cheerio.load(response.data);
-            const movieArticles = $('article, .post-item'); // Adjust selector based on site
+            const movieArticles = $('article, .post-item, .poster-card'); // Adjust selector based on site
 
             const moviesOnPage = [];
 
             movieArticles.each((i, el) => {
-                const titleElement = $(el).find('h2 a, h3 a');
-                const title = titleElement.text().trim();
-                const link = titleElement.attr('href');
-                const poster = $(el).find('img').attr('src');
+                let link = $(el).find('h2 a, h3 a').attr('href') || $(el).find('a').attr('href');
+                if (!link) {
+                    link = $(el).closest('a').attr('href') || $(el).parent('a').attr('href') || ($(el).is('a') ? $(el).attr('href') : null);
+                }
+                
+                let title = $(el).find('h2 a, h3 a, h2, h3, .post-title, .title').first().text().trim();
+                if (!title) title = $(el).find('img').attr('alt')?.trim();
+                
+                let poster = $(el).find('img').attr('src');
+                if (!poster) poster = $(el).find('img').attr('data-src');
 
                 if (title && link) {
                     moviesOnPage.push({ title, link, poster });
@@ -235,6 +280,9 @@ async function runScraper() {
             
             // Delay before next page
             await delay(3000);
+            
+            // Successfully scraped the page, update history
+            updateHistory(CATEGORY, page);
             
         } catch (error) {
             console.error(`❌ Error scraping page ${page}:`, error.message);
