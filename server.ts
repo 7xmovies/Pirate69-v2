@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import apiRouter from './server/api';
+import apiRouter from './server/api.js';
 
 async function startServer() {
   const app = express();
