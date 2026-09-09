@@ -153,8 +153,8 @@ import path from 'path';
 // --- NEW STATIC JSON ROUTES ---
 
 // In production, these should point to the raw GitHub URLs
-const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/7xmovies/Pirate69-v2/main';
-const USE_LOCAL_FILES = true; // Set to true for local testing, false for GitHub
+const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/7xmovies/database/main';
+const USE_LOCAL_FILES = process.env.NODE_ENV !== 'production';
 
 const getCategoryName = (source: string) => {
     if (source === 'rogmovies') return 'bollywood';
