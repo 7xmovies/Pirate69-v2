@@ -196,20 +196,43 @@ router.get('/json/movie/:id', async (req, res) => {
         const categoryName = getCategoryName(source);
         let movieData = null;
 
+        // 1. First, we must find which chunk this movie belongs to by reading the index
+        let indexData: any[] = [];
         if (USE_LOCAL_FILES) {
-            const movieFile = path.join(process.cwd(), 'data', categoryName, `${id}.json`);
-            if (fs.existsSync(movieFile)) {
-                movieData = JSON.parse(fs.readFileSync(movieFile, 'utf8'));
+            const indexFile = path.join(process.cwd(), 'data', `${categoryName}-index.json`);
+            if (fs.existsSync(indexFile)) {
+                indexData = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
             }
         } else {
-            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}/${id}.json`);
-            movieData = response.data;
+            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}-index.json`);
+            indexData = response.data;
+        }
+
+        const movieIndexEntry = indexData.find(m => m.id === id);
+        
+        if (!movieIndexEntry) {
+            return res.status(404).json({ error: 'Movie not found in index' });
+        }
+
+        const chunkId = movieIndexEntry.chunk || 1; // Default to 1 if not set
+
+        // 2. Now fetch the specific chunk file
+        if (USE_LOCAL_FILES) {
+            const chunkFile = path.join(process.cwd(), 'data', categoryName, `chunk-${chunkId}.json`);
+            if (fs.existsSync(chunkFile)) {
+                const chunkData = JSON.parse(fs.readFileSync(chunkFile, 'utf8'));
+                movieData = chunkData[id]; // Extract just this movie from the chunk dictionary
+            }
+        } else {
+            const response = await axios.get(`${GITHUB_REPO_URL}/data/${categoryName}/chunk-${chunkId}.json`);
+            const chunkData = response.data;
+            movieData = chunkData[id];
         }
 
         if (movieData) {
             res.json(movieData);
         } else {
-            res.status(404).json({ error: 'Movie not found' });
+            res.status(404).json({ error: 'Movie details not found in chunk' });
         }
     } catch (error: any) {
         console.error(`Error fetching movie ${req.params.id}:`, error);

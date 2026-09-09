@@ -32,38 +32,36 @@ These files (`hollywood-index.json` and `bollywood-index.json`) contain the mast
     "year": "2025",
     "poster": "https://new2.vegamovies.futbol/wp-content/uploads/2026/03/Avatar-Fire-and-Ash-2025-Bluray-ORG-200x300.jpg",
     "language": "Hindi - English",
-    "quality": "4K HDR"
+    "quality": "4K HDR",
+    "chunk": 1
   }
 ]
 ```
 
-## 2️⃣ Tier 2: Individual Movie Files
+## 2️⃣ Tier 2: The Chunk Files (100 Movies Per File)
 
-When a user clicks on a search result, the app fetches the detailed movie file using the `id`.
-**Rule:** The filename MUST exactly match the `id` provided in the index file, plus `.json`. 
-*(e.g., `id: "avatar-fire-and-ash-2025"` -> `data/hollywood/avatar-fire-and-ash-2025.json`)*
+To prevent GitHub from crashing by having 50,000 files in one folder, we bundle up to 100 movies into a single "chunk" file. The index tells the API which chunk to load.
 
-### Example (`data/hollywood/avatar-fire-and-ash-2025.json`)
+### Example (`data/hollywood/chunk-1.json`)
 ```json
 {
-  "id": "avatar-fire-and-ash-2025",
-  "fullTitle": "Download Avatar: Fire and Ash (2025) iMAX-BluRay Dual Audio (Hindi DD5.1 – English DD5.1) 480p | 720p | 1080p & 2160p",
-  "cleanTitle": "Avatar: Fire and Ash",
-  "poster": "https://new2.vegamovies.futbol/wp-content/uploads/2026/03/Avatar-Fire-and-Ash-2025-Bluray-ORG-200x300.jpg",
-  "info": {
-    "imdbRating": "8.5",
-    "genres": ["Action", "Sci-Fi", "Adventure"],
-    "director": "James Cameron"
+  "avatar-fire-and-ash-2025": {
+    "id": "avatar-fire-and-ash-2025",
+    "fullTitle": "Download Avatar: Fire and Ash (2025) iMAX-BluRay Dual Audio",
+    "cleanTitle": "Avatar: Fire and Ash",
+    "poster": "https://new2.vegamovies.futbol/wp-content/uploads/2026/03/Avatar-Fire-and-Ash-2025-Bluray-ORG-200x300.jpg",
+    "downloadLinks": [
+      {
+        "quality": "1080p",
+        "size": "3.4GB",
+        "label": "V Cloud Resumable",
+        "url": "https://vcloud.fit/56jj9q2x72n15nc"
+      }
+    ]
   },
-  "sourceUrl": "https://new2.vegamovies.futbol/download-avatar-fire-and-ash-...",
-  "downloadLinks": [
-    {
-      "quality": "1080p",
-      "size": "3.4GB",
-      "label": "V Cloud Resumable",
-      "url": "https://vcloud.fit/56jj9q2x72n15nc"
-    }
-  ]
+  "the-batman-2022": {
+     // ... next movie details ...
+  }
 }
 ```
 
@@ -71,11 +69,21 @@ When a user clicks on a search result, the app fetches the detailed movie file u
 
 The frontend sends a `source` parameter depending on which tab the user selects. The backend routes it as follows:
 
-- `source=vegamovies` ➡️ Reads from `hollywood-index.json` and `hollywood/` folder.
-- `source=rogmovies` ➡️ Reads from `bollywood-index.json` and `bollywood/` folder.
+- `source=vegamovies` ➡️ Reads from `hollywood-index.json`, finds the `chunk` number, and grabs that movie from `hollywood/chunk-X.json`.
+- `source=rogmovies` ➡️ Reads from `bollywood-index.json`, finds the `chunk` number, and grabs that movie from `bollywood/chunk-X.json`.
 
-## 🚀 How to Update
-To update the site, run your Python/Node scraper script to generate these JSON files and commit/push them to your GitHub repository!
+## 🚀 How to Bulk Scrape
+
+We have included a base template script at `/scripts/bulk-scraper.js`. 
+This script handles pagination (e.g. `/page/2/`), extracts data, and automatically bundles them into chunks of 100!
+
+**How to run it locally on your PC:**
+1. Install Node.js on your computer.
+2. Clone your GitHub repository.
+3. Open a terminal and run `npm install cheerio axios`
+4. Run the script: `node scripts/bulk-scraper.js`
+
+*Note: If the script gets a 403 error, Cloudflare blocked it. You will need to modify the script to use [Puppeteer Stealth](https://www.npmjs.com/package/puppeteer-extra-plugin-stealth) or [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr).*
 
 ## 🤖 AI Agent Scraping Instructions (Prompt Template)
 
