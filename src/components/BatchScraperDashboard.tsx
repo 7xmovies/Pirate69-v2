@@ -86,6 +86,34 @@ export function BatchScraperDashboard() {
     }
   };
 
+  const handleStop = async () => {
+    if (!activeJobId) return;
+    try {
+      await fetch(`/api/scrape/stop/${activeJobId}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Error stopping job', err);
+    }
+  };
+
+  const handleSync = async () => {
+    try {
+      const res = await fetch('/api/scrape/sync', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveJobId(data.jobId);
+        setJobState({
+          id: data.jobId,
+          source: 'git-sync',
+          status: 'running',
+          progress: 50,
+          logs: ['Initializing database sync...'],
+        });
+      }
+    } catch (err) {
+      console.error('Error starting sync', err);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="mb-8">
@@ -143,20 +171,29 @@ export function BatchScraperDashboard() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-              {!activeJobId && (!jobState || jobState.status === 'completed' || jobState.status === 'error') ? (
-                <button
-                  onClick={handleStart}
-                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/25"
-                >
-                  <Play className="w-4 h-4" fill="currentColor" /> Start Scraping
-                </button>
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              {!activeJobId && (!jobState || jobState.status === 'completed' || jobState.status === 'error' || jobState.status === 'stopped') ? (
+                <>
+                    <button
+                    onClick={handleStart}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/25"
+                    >
+                    <Play className="w-4 h-4" fill="currentColor" /> Start Scraping
+                    </button>
+                    
+                    <button
+                    onClick={handleSync}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-lg font-medium transition-colors"
+                    >
+                    <RefreshCw className="w-4 h-4" /> Push to GitHub
+                    </button>
+                </>
               ) : (
                 <button
-                  disabled
-                  className="w-full flex items-center justify-center gap-2 bg-slate-200 dark:bg-slate-800 text-slate-500 py-2.5 rounded-lg font-medium cursor-not-allowed"
+                  onClick={handleStop}
+                  className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-red-500/25"
                 >
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Scraping in Progress
+                  <Square className="w-4 h-4" fill="currentColor" /> Stop Scraping
                 </button>
               )}
             </div>

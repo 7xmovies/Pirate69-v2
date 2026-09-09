@@ -530,9 +530,10 @@ import { spawn } from 'child_process';
 interface ScrapeJob {
   id: string;
   source: string;
-  status: 'idle' | 'running' | 'completed' | 'error';
+  status: 'idle' | 'running' | 'completed' | 'error' | 'stopped';
   progress: number;
   logs: string[];
+  process?: import('child_process').ChildProcess;
 }
 
 const scrapeJobs = new Map<string, ScrapeJob>();
@@ -557,7 +558,12 @@ router.post('/scrape/start', (req, res) => {
     const scriptPath = path.join(process.cwd(), 'scripts', 'bulk-scraper.js');
     
     // Pass args: <source> <startPage> <endPage>
-    const child = spawn('node', [scriptPath, job.source, (startPage || 1).toString(), (endPage || 5).toString()]);
+    const args = [scriptPath, job.source];
+    if (startPage) args.push(startPage.toString());
+    if (endPage) args.push(endPage.toString());
+
+    const child = spawn('node', args);
+    job.process = child;
     
     child.stdout.on('data', (data) => {
       const output = data.toString().trim();
@@ -566,12 +572,14 @@ router.post('/scrape/start', (req, res) => {
          logLines.forEach((line: string) => {
             job.logs.push(line);
             // Very naive progress estimation if script outputs page progress
-            if (line.includes('Fetching page')) {
-                const match = line.match(/page (\d+)/);
+            if (line.includes('Fetching page') || line.includes('Scraping Page')) {
+                const match = line.match(/(?:page|Page) (\d+)/);
                 if (match) {
                     const current = parseInt(match[1]);
-                    const totalPages = (endPage || 5) - (startPage || 1) + 1;
-                    const donePages = current - (startPage || 1) + 1;
+                    const start = startPage || 1;
+                    const end = endPage || start + 4;
+                    const totalPages = end - start + 1;
+                    const donePages = current - start + 1;
                     job.progress = Math.min(Math.round((donePages / totalPages) * 100), 99);
                 }
             }
@@ -594,9 +602,14 @@ router.post('/scrape/start', (req, res) => {
     });
     
     child.on('close', (code) => {
-      job.status = code === 0 ? 'completed' : 'error';
-      job.progress = 100;
-      job.logs.push(code === 0 ? '[SUCCESS] Job finished successfully.' : `[ERROR] Job exited with code ${code}`);
+      if (job.status === 'stopped') {
+          job.logs.push('[INFO] Job stopped cleanly by user.');
+      } else {
+          job.status = code === 0 ? 'completed' : 'error';
+          job.progress = 100;
+          job.logs.push(code === 0 ? '[SUCCESS] Job finished successfully.' : `[ERROR] Job exited with code ${code}`);
+      }
+      delete job.process; // Clean up memory
     });
     
     res.json({ jobId, message: 'Scrape job started successfully' });
@@ -605,6 +618,61 @@ router.post('/scrape/start', (req, res) => {
     job.logs.push(`[ERROR] Failed to start process: ${error.message}`);
     res.status(500).json({ error: 'Failed to start job' });
   }
+});
+
+router.post('/scrape/stop/:id', (req, res) => {
+  const jobId = req.params.id;
+  const job = scrapeJobs.get(jobId);
+  
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  
+  if (job.status !== 'running' || !job.process) {
+    return res.status(400).json({ error: 'Job is not running' });
+  }
+  
+  job.status = 'stopped';
+  job.logs.push('[INFO] Sending stop signal (SIGINT) to scraper...');
+  job.process.kill('SIGINT');
+  
+  res.json({ success: true, message: 'Stop signal sent' });
+});
+
+router.post('/scrape/sync', (req, res) => {
+    try {
+        const child = spawn('npm', ['run', 'sync-data']);
+        const jobId = 'sync-' + Date.now();
+        
+        const job: ScrapeJob = {
+            id: jobId,
+            source: 'git-sync',
+            status: 'running',
+            progress: 50,
+            logs: ['[INFO] Starting database sync to GitHub...']
+        };
+        scrapeJobs.set(jobId, job);
+        
+        child.stdout.on('data', data => {
+            const lines = data.toString().split('\n');
+            lines.forEach((l: string) => { if(l.trim()) job.logs.push(l.trim()) });
+        });
+        
+        child.stderr.on('data', data => {
+            const lines = data.toString().split('\n');
+            lines.forEach((l: string) => { if(l.trim()) job.logs.push(l.trim()) });
+        });
+        
+        child.on('close', (code) => {
+            job.status = code === 0 ? 'completed' : 'error';
+            job.progress = 100;
+            job.logs.push(code === 0 ? '[SUCCESS] Database sync completed' : `[ERROR] Sync failed with code ${code}`);
+        });
+        
+        res.json({ success: true, jobId });
+    } catch(err: any) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 router.get('/scrape/status/:id', (req, res) => {
