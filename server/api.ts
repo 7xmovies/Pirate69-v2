@@ -538,30 +538,71 @@ interface ScrapeJob {
 
 const scrapeJobs = new Map<string, ScrapeJob>();
 
+router.get('/scrape/history', (req, res) => {
+  try {
+    const historyFile = path.join(process.cwd(), 'data', 'scraper-history.json');
+    let history: Record<string, number> = {};
+    if (fs.existsSync(historyFile)) {
+      history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    }
+    const sourcesHistory = {
+      vegamovies: history['hollywood'] || 0,
+      rogmovies: history['bollywood'] || 0,
+      xprimehub: history['xprimehub'] || 0,
+      raw: history
+    };
+    res.json(sourcesHistory);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/scrape/start', (req, res) => {
-  const { source, startPage, endPage, concurrency } = req.body;
+  const { source, startPage, endPage, concurrency, auto } = req.body;
   const jobId = Date.now().toString();
+
+  // Resolve category and history if pages are not provided or auto is requested
+  const actualSource = source || 'vegamovies';
+  const category = (actualSource === 'rogmovies' ? 'bollywood' : (actualSource === 'xprimehub' ? 'xprimehub' : 'hollywood'));
+  
+  let lastPage = 0;
+  try {
+    const historyFile = path.join(process.cwd(), 'data', 'scraper-history.json');
+    if (fs.existsSync(historyFile)) {
+      const history = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+      lastPage = history[category] || 0;
+    }
+  } catch (e) {}
+
+  const resolvedStart = startPage ? parseInt(startPage) : (lastPage + 1);
+  const resolvedEnd = endPage ? parseInt(endPage) : (resolvedStart + 9);
+  const resolvedConcurrency = concurrency ? parseInt(concurrency) : 5;
   
   const job: ScrapeJob = {
     id: jobId,
-    source: source || 'vegamovies',
+    source: actualSource,
     status: 'running',
     progress: 0,
-    logs: ['[INFO] Scrape job initialized...']
+    logs: [
+      `[INFO] Scrape job initialized for ${actualSource}...`,
+      `[INFO] Target: Pages ${resolvedStart} to ${resolvedEnd} (${resolvedEnd - resolvedStart + 1} pages total, Last scraped: Page ${lastPage})`,
+      `[INFO] Speed: ${resolvedConcurrency} parallel workers`
+    ]
   };
   
   scrapeJobs.set(jobId, job);
   
   try {
-    // Determine which script to run based on source if needed
-    // Currently using the unified bulk-scraper.js
     const scriptPath = path.join(process.cwd(), 'scripts', 'bulk-scraper.js');
     
     // Pass args: <source> <startPage> <endPage> <concurrency>
-    const args = [scriptPath, job.source];
-    if (startPage) args.push(startPage.toString());
-    if (endPage) args.push(endPage.toString());
-    if (concurrency) args.push(concurrency.toString());
+    const args = [
+      scriptPath,
+      job.source,
+      resolvedStart.toString(),
+      resolvedEnd.toString(),
+      resolvedConcurrency.toString()
+    ];
 
     const child = spawn('node', args);
     job.process = child;
@@ -572,15 +613,13 @@ router.post('/scrape/start', (req, res) => {
          const logLines = output.split('\n');
          logLines.forEach((line: string) => {
             job.logs.push(line);
-            // Very naive progress estimation if script outputs page progress
+            // Progress estimation based on page
             if (line.includes('Fetching page') || line.includes('Scraping Page')) {
                 const match = line.match(/(?:page|Page) (\d+)/);
                 if (match) {
                     const current = parseInt(match[1]);
-                    const start = startPage || 1;
-                    const end = endPage || start + 4;
-                    const totalPages = end - start + 1;
-                    const donePages = current - start + 1;
+                    const totalPages = Math.max(1, resolvedEnd - resolvedStart + 1);
+                    const donePages = Math.max(1, current - resolvedStart + 1);
                     job.progress = Math.min(Math.round((donePages / totalPages) * 100), 99);
                 }
             }

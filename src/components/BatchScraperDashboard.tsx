@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Square, Terminal, RefreshCw, CheckCircle2, XCircle, Zap } from 'lucide-react';
+import { Play, Square, Terminal, RefreshCw, CheckCircle2, XCircle, Zap, History, Sparkles } from 'lucide-react';
 
 interface ScrapeJob {
   id: string;
@@ -12,10 +12,12 @@ interface ScrapeJob {
 export function BatchScraperDashboard() {
   const [source, setSource] = useState('vegamovies');
   const [startPage, setStartPage] = useState(1);
-  const [endPage, setEndPage] = useState(5);
+  const [endPage, setEndPage] = useState(10);
   const [concurrency, setConcurrency] = useState(5);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [jobState, setJobState] = useState<ScrapeJob | null>(null);
+  const [historyData, setHistoryData] = useState<Record<string, number>>({});
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll logs
@@ -24,6 +26,35 @@ export function BatchScraperDashboard() {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [jobState?.logs]);
+
+  // Fetch scraper history
+  const fetchHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const res = await fetch('/api/scrape/history');
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+  }, []);
+
+  // Update input fields automatically when source or history changes
+  useEffect(() => {
+    const lastPage = historyData[source] || 0;
+    const nextStart = lastPage + 1;
+    const nextEnd = nextStart + 9;
+    setStartPage(nextStart);
+    setEndPage(nextEnd);
+  }, [source, historyData]);
 
   // Poll for job status if active
   useEffect(() => {
@@ -36,8 +67,9 @@ export function BatchScraperDashboard() {
         if (res.ok) {
           const data = await res.json();
           setJobState(data);
-          if (data.status === 'completed' || data.status === 'error') {
+          if (data.status === 'completed' || data.status === 'error' || data.status === 'stopped') {
             setActiveJobId(null);
+            fetchHistory(); // Refresh history immediately upon completion
           }
         }
       } catch (err) {
@@ -55,7 +87,10 @@ export function BatchScraperDashboard() {
     };
   }, [activeJobId]);
 
-  const handleStart = async () => {
+  const handleStart = async (customStart?: number, customEnd?: number, isAuto: boolean = false) => {
+    const sPage = customStart !== undefined ? customStart : startPage;
+    const ePage = customEnd !== undefined ? customEnd : endPage;
+
     try {
       const res = await fetch('/api/scrape/start', {
         method: 'POST',
@@ -64,9 +99,10 @@ export function BatchScraperDashboard() {
         },
         body: JSON.stringify({
           source,
-          startPage,
-          endPage,
+          startPage: sPage,
+          endPage: ePage,
           concurrency,
+          auto: isAuto,
         }),
       });
 
@@ -78,7 +114,10 @@ export function BatchScraperDashboard() {
           source,
           status: 'running',
           progress: 0,
-          logs: ['Initializing scrape job...'],
+          logs: [
+            `[INFO] ${isAuto ? '⚡ Auto Scraper' : 'Scrape job'} started for ${source}...`,
+            `[INFO] Target: Pages ${sPage} to ${ePage} (${ePage - sPage + 1} pages total)`,
+          ],
         });
       } else {
         console.error('Failed to start job');
@@ -86,6 +125,15 @@ export function BatchScraperDashboard() {
     } catch (err) {
       console.error('Error starting job', err);
     }
+  };
+
+  const handleAutoScrape = () => {
+    const lastPage = historyData[source] || 0;
+    const nextStart = lastPage + 1;
+    const nextEnd = nextStart + 9;
+    setStartPage(nextStart);
+    setEndPage(nextEnd);
+    handleStart(nextStart, nextEnd, true);
   };
 
   const handleStop = async () => {
@@ -108,13 +156,17 @@ export function BatchScraperDashboard() {
           source: 'git-sync',
           status: 'running',
           progress: 50,
-          logs: ['Initializing database sync...'],
+          logs: ['Initializing database sync to GitHub...'],
         });
       }
     } catch (err) {
       console.error('Error starting sync', err);
     }
   };
+
+  const lastScraped = historyData[source] || 0;
+  const autoNextStart = lastScraped + 1;
+  const autoNextEnd = autoNextStart + 9;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -131,7 +183,16 @@ export function BatchScraperDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Controls */}
         <div className="md:col-span-1 space-y-6 bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-          <h3 className="font-semibold text-lg border-b border-slate-100 dark:border-slate-800 pb-3">Configuration</h3>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h3 className="font-semibold text-lg">Configuration</h3>
+            <button
+              onClick={fetchHistory}
+              title="Refresh history"
+              className="text-xs text-slate-500 hover:text-indigo-500 flex items-center gap-1 transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
           
           <div className="space-y-4">
             <div>
@@ -146,6 +207,25 @@ export function BatchScraperDashboard() {
                 <option value="rogmovies">RogMovies (Bollywood)</option>
                 <option value="xprimehub">X-Hub (XPrimeHub)</option>
               </select>
+            </div>
+
+            {/* History Status Card */}
+            <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-3 text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-medium">
+                <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                  <History className="w-3.5 h-3.5 text-indigo-500" />
+                  Last Scraped:
+                </span>
+                <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                  {lastScraped > 0 ? `Page ${lastScraped}` : 'None (Fresh)'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                <span>Next 10 pages:</span>
+                <span className="font-mono text-slate-700 dark:text-slate-200 font-semibold">
+                  Pages {autoNextStart} – {autoNextEnd}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -195,27 +275,36 @@ export function BatchScraperDashboard() {
               <p className="text-[11px] text-slate-500 mt-1">Scrapes up to {concurrency} movies in parallel instead of 1-by-1.</p>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
               {!activeJobId && (!jobState || jobState.status === 'completed' || jobState.status === 'error' || jobState.status === 'stopped') ? (
                 <>
-                    <button
-                    onClick={handleStart}
-                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-indigo-500/25"
-                    >
-                    <Play className="w-4 h-4" fill="currentColor" /> Start Scraping
-                    </button>
-                    
-                    <button
+                  {/* AUTO SCRAPE BUTTON */}
+                  <button
+                    onClick={handleAutoScrape}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-700 text-white py-3 rounded-xl font-bold transition-all shadow-lg shadow-amber-500/25 active:scale-[0.98]"
+                  >
+                    <Sparkles className="w-4 h-4 fill-white/30" />
+                    <span>Auto Scrape 10 Pages ({autoNextStart}–{autoNextEnd})</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleStart()}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-medium transition-colors shadow-md shadow-indigo-500/20"
+                  >
+                    <Play className="w-4 h-4" fill="currentColor" /> Start Custom Range
+                  </button>
+                  
+                  <button
                     onClick={handleSync}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-lg font-medium transition-colors"
-                    >
+                    className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl font-medium transition-colors border border-slate-700/50"
+                  >
                     <RefreshCw className="w-4 h-4" /> Push to GitHub
-                    </button>
+                  </button>
                 </>
               ) : (
                 <button
                   onClick={handleStop}
-                  className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-red-500/25"
+                  className="w-full flex items-center justify-center gap-2 bg-red-500 hover:bg-red-600 text-white py-2.5 rounded-xl font-medium transition-colors shadow-lg shadow-red-500/25"
                 >
                   <Square className="w-4 h-4" fill="currentColor" /> Stop Scraping
                 </button>

@@ -81,7 +81,7 @@ if (isNaN(START_PAGE)) {
 }
 let END_PAGE = parseInt(args[2]);
 if (isNaN(END_PAGE)) {
-    END_PAGE = START_PAGE + 4; // Default to scraping 5 pages
+    END_PAGE = START_PAGE + 9; // Default to scraping 10 pages
 }
 let CONCURRENCY = parseInt(args[3]) || 5;
 
