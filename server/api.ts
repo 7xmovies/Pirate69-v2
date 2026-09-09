@@ -5,12 +5,32 @@ import * as cheerio from 'cheerio';
 /**
  * Wrapper for axios.get (Proxy removed)
  */
-async function axiosGetWithFallback(url, options = {}) {
+async function axiosGetWithFallback(url: string, options: any = {}) {
     try {
-        const res = await axios.get(url, { ...options, timeout: 7000 });
+        const res = await axios.get(url, { ...options, timeout: 5000 });
         return res;
-    } catch (err) {
-        console.error(`Request failed (${err?.response?.status || err?.code}): ${url}`);
+    } catch (err: any) {
+        console.error(`Direct request failed (${err?.response?.status || err?.code}): ${url}`);
+        
+        // Fallback to ScraperAPI
+        const apiKey = process.env.SCRAPER_API_KEY || '6aa8d89b2fe4704e0deff17075e98665';
+        if (apiKey) {
+            console.log('Attempting to bypass with ScraperAPI...');
+            try {
+                const scraperUrl = `http://api.scraperapi.com/?api_key=${apiKey}&url=${encodeURIComponent(url)}`;
+                // We strip custom headers to let ScraperAPI handle the disguise
+                const scraperOptions = { ...options, timeout: 8000 };
+                if (scraperOptions.headers) {
+                    delete scraperOptions.headers;
+                }
+                const res = await axios.get(scraperUrl, scraperOptions);
+                return res;
+            } catch (scraperErr: any) {
+                console.error(`ScraperAPI failed (${scraperErr?.response?.status || scraperErr?.code})`);
+                throw scraperErr;
+            }
+        }
+        
         throw err;
     }
 }
