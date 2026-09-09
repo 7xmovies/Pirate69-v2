@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "sync-data": "cd data && git add . && git commit -m \"Auto-update movie database\" && git push origin main"
+    "sync-data": "cd data && git pull --rebase origin main && git add . && (git diff --staged --quiet || git commit -m \"Auto-update movie database\") && git push origin main"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
